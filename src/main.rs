@@ -1,7 +1,10 @@
-use std::io::Write;
 use image::GenericImageView;
 use clipboard::ClipboardProvider;
 use clipboard::ClipboardContext;
+use std::io::Write;
+use std::fs::File;
+use std::path::Path;
+use std::process::exit;
 
 struct AsciiImage {
 	ascii: Vec<Vec<String>>,
@@ -49,6 +52,14 @@ impl AsciiImage {
 
 	}
 
+	fn save_to_file(&self, path: &str) {
+		if Path::new(path).exists() {
+			std::fs::remove_file(path.clone()).unwrap();
+		}
+		let mut file = File::create(path).unwrap();
+		file.write_all(self.ascii_string.as_bytes()).unwrap();
+	}
+
 	fn _get_ascii(&self, intensity: u32) -> String {
 		let i = intensity/32;
 		return [" ", ".", ",", "-", "~", "+", "=", "@"][i as usize].to_string();
@@ -56,32 +67,66 @@ impl AsciiImage {
 
 }
 
-fn read() -> String {
-	let mut buffer: String = String::new();
-	let stdin: std::io::Stdin = std::io::stdin();
-	stdin.read_line(&mut buffer).unwrap();
-	return buffer.trim().to_string();
-}
-
 fn main() {
 
-	println!("Loading.");
-	print!("Path to image ? ");
-	std::io::stdout().flush().unwrap();
-	let path = read();
+	let help_string: &str = "\nUsage: 
+image_ascii.exe [image] {options}
+
+Options:
+
+--help:        Show this menu.
+--output:      Outputs ascii art to text file (ascii.txt).
+--ratio [int]: The ratio of pixels to ascii (higher the number the smaller the resulting image) (default: 3).";
+
+	let args: Vec<String> = std::env::args().collect();
+
+	if args.len() == 1 {
+		println!("{}", help_string);
+		exit(0);
+	}
+	if args[1..].contains(&"--help".to_string()) {
+		println!("{}", help_string);
+		exit(0);
+	}
+
+	let index = args.clone().iter().position(|x| { x == "--ratio" }).unwrap_or(0);
+	let ratio = if index == 0 {
+		3
+	} else {
+		if args.len() <= index+1 {
+			eprintln!("Must supply ratio after --ratio");
+			exit(1);
+		}
+		match args[index+1].parse::<i32>() {
+			Ok(val) => if val <= 0 {
+				eprintln!("Ratio must be more than 0");
+				exit(1);
+			} else {
+				val
+			},
+			Err(_) => {
+				eprintln!("Must supply ratio after --ratio");
+				exit(1);
+			}
+		}
+	};
+
+	let path = (&args[1]).clone();
 	if !std::path::Path::new(path.as_str()).exists() {
 		eprintln!("Path does not exist");
-		rpassword::prompt_password("Press enter to exit ").unwrap();
+		exit(1);
 	}
+	println!("Creating.");
 	let mut img = AsciiImage::new(path.as_str());
-	print!("Ratio of pixels to characters ? ");
-	std::io::stdout().flush().unwrap();
-	let ratio = read();
-	img.create(ratio.parse().unwrap_or(1));
+	img.create(ratio as u32);
 
-	let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
-	ctx.set_contents(img.ascii_string).unwrap();
-	println!("Copied to clipboard.");
-	rpassword::prompt_password("Press enter to exit ").unwrap();
+	if args[1..].contains(&"--output".to_string()) {
+		img.save_to_file(".\\ascii.txt");
+		println!("Saved to .\\ascii.txt");
+	} else {
+		let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
+		ctx.set_contents(img.ascii_string).unwrap();
+		println!("Copied to clipboard.");
+	}
 
 }
